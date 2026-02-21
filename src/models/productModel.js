@@ -33,6 +33,10 @@ const inventorySchema = new Schema({
         type: String,
         required: true,
     },
+    barcode: {
+        type: String,
+        unique: true,
+    }
 },
 
 {

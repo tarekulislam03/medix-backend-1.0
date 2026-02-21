@@ -1,3 +1,4 @@
+import bwipjs from "bwip-js";
 import Inventory from "../models/productModel.js";
 
 // Create product
@@ -6,46 +7,78 @@ const createProduct = async (req, res) => {
 
         // If body is an array → bulk upload
         if (Array.isArray(req.body)) {
-            const products = await Inventory.insertMany(req.body);
+
+            const productsWithBarcode = req.body.map((item) => {
+                const barcodeString =
+                    `${item.product_name.replace(/\s/g, '').toUpperCase()}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+                return {
+                    ...item,
+                    barcode: barcodeString
+                };
+            });
+
+            const products = await Inventory.insertMany(productsWithBarcode);
 
             return res.status(201).json({
                 message: "Products added successfully",
-                
                 data: products,
             });
         }
 
-        const { product_name, mrp, quantity, alert_threshold, expiry_date } = req.body
+        const { medicine_name, mrp, quantity, alert_threshold, expiry_date, supplier_name } = req.body;
 
         // Validation
-        if (!product_name || !mrp || !quantity || !expiry_date) {
+        if (!medicine_name || !mrp || !quantity || !expiry_date || !supplier_name) {
             return res.status(400).json({
                 message: "All fields are required",
-
-            })
+            });
         }
 
+        // Generate barcode string
+        const barcodeString =
+            `${medicine_name.replace(/\s/g, '').toUpperCase()}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+        // Optional: generate Code128 barcode (not stored, just validated)
+        await bwipjs.toBuffer({
+            bcid: 'code128',
+            text: barcodeString,
+            scale: 3,
+            height: 10,
+            includetext: true,
+            textxalign: 'center',
+        });
 
         const product = await Inventory.create({
-            product_name,
+            medicine_name,
             mrp,
             quantity,
             expiry_date,
-            alert_threshold
+            supplier_name,
+            alert_threshold,
+            barcode: barcodeString
         });
 
         return res.status(200).json({
             message: "Product Added Succesfully",
-            data: { product_name: product.product_name, mrp: product.mrp, quantity: product.quantity, expiry_date: product.expiry_date },
+            data: {
+                medicine_name: product.medicine_name,
+                mrp: product.mrp,
+                quantity: product.quantity,
+                expiry_date: product.expiry_date,
+                supplier_name: product.supplier_name,
+                alert_threshold: product.alert_threshold,
+                barcode: product.barcode
+            },
+
         });
 
     } catch (error) {
         res.status(500).json({
-            message: "Internal Server Error"
-        })
-
+            message: error.message
+        });
     }
-}
+};
 
 // Get all Products
 const getProducts = async (req, res) => {
@@ -147,47 +180,45 @@ const deleteProduct = async (req, res) => {
     }
 }
 
-// SearCH Products 
+// SearcH Products 
 
-const searchProduct  = async (req, res)=>{
+const searchProduct = async (req, res) => {
     try {
-        
+
         const keyword = req.query.keyword || "";
 
         // Validation
-        if(!keyword){
+        if (!keyword) {
             res.status(400).json({
                 message: "Search keywords are required"
-            
+
             })
         }
 
         const product = await Inventory.find({
-            product_name:{
-                $regex: keyword,
-                $options: "i"
-            
-            }
-        })
+            $or: [
+                { medicine_name: { $regex: keyword, $options: "i" } },
+                { barcode: keyword }
+            ]
+        });
 
-        if(!product){
+        if (!product || product.length === 0) {
             return res.status(400).json({
                 message: "No products found for this keyword"
-            })
+            });
         }
 
         res.status(200).json({
-            count: `${product.length} prdoucts found for this keyword`,
+            count: `${product.length} products found for this keyword`,
             data: product,
-            
-        })
+        });
 
     } catch (error) {
         console.log(error);
         res.status(500).json({
             message: "Internal Server Error",
             data: error
-        })
+        });
     }
 }
 
@@ -238,4 +269,4 @@ const soonToExpiry = async (req, res) => {
 }
 
 
-export { createProduct, getProducts, getProductById, updateProduct, deleteProduct, searchProduct, lowStock, soonToExpiry  };
+export { createProduct, getProducts, getProductById, updateProduct, deleteProduct, searchProduct, lowStock, soonToExpiry };
