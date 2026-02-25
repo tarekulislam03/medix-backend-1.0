@@ -5,7 +5,11 @@ const SalesSchema = new mongoose.Schema({
         type: String,
         unique: true
     },
-
+    customer: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Customer",
+        required: false
+    },
     items: [
         {
             product_id: {
@@ -17,7 +21,7 @@ const SalesSchema = new mongoose.Schema({
             mrp: Number,
             quantity: Number,
             discount_percent: Number,
-    discount_amount: Number,
+            discount_amount: Number,
             total: Number
         }
     ],
