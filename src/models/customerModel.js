@@ -9,6 +9,10 @@ const customerSchema = new Schema({
     phone_no: {
         type: String,
         required: true
+    },
+    credit_balance: {
+        type: Number,
+        default: 0
     }
 })
 

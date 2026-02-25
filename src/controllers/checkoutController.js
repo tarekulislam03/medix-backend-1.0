@@ -2,11 +2,10 @@ import Inventory from "../models/productModel.js";
 import Sales from "../models/salesModel.js";
 import Customer from "../models/customerModel.js";
 
-
 const checkout = async (req, res) => {
     try {
 
-        const { customer_id, items, payment_method } = req.body;
+        const { customer_id, items, payment_method, amount_paid = 0 } = req.body;
 
         // Validate cart
         if (!items || items.length === 0) {
@@ -53,7 +52,6 @@ const checkout = async (req, res) => {
                 });
             }
 
-            // Validate discount percent
             const discountPercent = item.discount_percent || 0;
 
             if (discountPercent < 0 || discountPercent > 100) {
@@ -98,6 +96,23 @@ const checkout = async (req, res) => {
             (subtotal - total_discount).toFixed(2)
         );
 
+        // Validate amount paid
+        if (amount_paid < 0) {
+            return res.status(400).json({
+                message: "Invalid amount paid"
+            });
+        }
+
+        if (amount_paid > grandTotal) {
+            return res.status(400).json({
+                message: "Amount paid cannot exceed total"
+            });
+        }
+
+        const dueAmount = Number(
+            (grandTotal - amount_paid).toFixed(2)
+        );
+
         const invoiceNumber = `INV-${Date.now()}`;
 
         const sale = await Sales.create({
@@ -109,12 +124,24 @@ const checkout = async (req, res) => {
             subtotal,
             total_discount,
             grand_total: grandTotal,
+            amount_paid,
+            due_amount: dueAmount,
             payment_method
         });
 
+        // If due exists and customer selected → update credit
+        if (customer && dueAmount > 0) {
+            customer.credit_balance += dueAmount;
+            await customer.save();
+        }
+
         return res.status(200).json({
-            message: "Billing successful",
-            invoice: sale
+            message: dueAmount > 0 
+                ? "Billing successful. Due recorded."
+                : "Billing successful",
+            invoice: sale,
+            due_amount: dueAmount,
+            customer_credit_balance: customer ? customer.credit_balance : null
         });
 
     } catch (error) {

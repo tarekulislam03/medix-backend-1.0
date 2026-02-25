@@ -29,6 +29,8 @@ const SalesSchema = new mongoose.Schema({
     subtotal: Number,
     total_discount: Number,
     grand_total: Number,
+    amount_paid: Number,
+    due_amount: Number,
 
     payment_method: {
         type: String,
