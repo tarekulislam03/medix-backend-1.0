@@ -200,4 +200,35 @@ const getCustomerLastPurchase = async (req, res) => {
   }
 };
 
-export { createCustomer, getAllCustomers, getCustomerById, updateCustomer, deleteCustomer, searchCustomer, getCustomerLastPurchase }
+
+const getCustomerCredit = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const customer = await Customer.findById(id).select("credit_balance name");
+
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: "Customer not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      customer_id: customer._id,
+      customer_name: customer.name,
+      customer_credit_balance: customer.credit_balance || 0,
+    });
+
+  } catch (error) {
+    console.error("Error fetching customer credit:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching customer credit",
+    });
+  }
+};
+
+export { createCustomer, getAllCustomers, getCustomerById, updateCustomer, deleteCustomer, searchCustomer, getCustomerLastPurchase, getCustomerCredit }
