@@ -12,7 +12,7 @@ const checkout = async (req, res) => {
             previous_due_payment = 0
         } = req.body;
 
-        
+
         // Basic Validations        
         if (!items || items.length === 0) {
             return res.status(400).json({ message: "Cart is empty" });
@@ -39,7 +39,7 @@ const checkout = async (req, res) => {
             });
         }
 
-  
+
         // Customer Validation
         let customer = null;
         let previousCredit = 0;
@@ -70,7 +70,7 @@ const checkout = async (req, res) => {
             });
         }
 
-       
+
         // Process Items
         let subtotal = 0;
         let total_discount = 0;
@@ -136,9 +136,8 @@ const checkout = async (req, res) => {
         );
 
         // Final Financial Calculations
-
         // Prevent system overpayment
-        if (paidAmount > (grandTotal + previousCredit)) {
+        if (paidAmount > (grandTotal + previousCredit + 0.01)) {
             return res.status(400).json({
                 message: "Amount paid exceeds total payable"
             });
@@ -146,9 +145,14 @@ const checkout = async (req, res) => {
 
         const remainingForBill = paidAmount - previousDuePayment;
 
-        const dueAmount = Number(
+        let dueAmount = Number(
             (grandTotal - remainingForBill).toFixed(2)
         );
+
+        // Prevent negative due
+        if (dueAmount < 0) {
+            dueAmount = 0;
+        }
 
         const invoiceNumber = `INV-${Date.now()}`;
 
@@ -168,7 +172,7 @@ const checkout = async (req, res) => {
             payment_method
         });
 
-        
+
         // Update Customer Credit
         if (customer) {
             // Remove paid previous due
