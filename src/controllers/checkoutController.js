@@ -4,24 +4,46 @@ import Customer from "../models/customerModel.js";
 
 const checkout = async (req, res) => {
     try {
+        const {
+            customer_id,
+            items,
+            payment_method,
+            amount_paid = 0,
+            previous_due_payment = 0
+        } = req.body;
 
-        const { customer_id, items, payment_method, amount_paid = 0 } = req.body;
-
-        // Validate cart
+        
+        // Basic Validations        
         if (!items || items.length === 0) {
             return res.status(400).json({ message: "Cart is empty" });
         }
 
-        // Validate payment method
         if (!payment_method) {
             return res.status(400).json({
                 message: "Payment method is required"
             });
         }
 
-        let customer = null;
+        const paidAmount = Number(amount_paid);
+        const previousDuePayment = Number(previous_due_payment);
 
-        // If customer is provided
+        if (isNaN(paidAmount) || paidAmount < 0) {
+            return res.status(400).json({
+                message: "Invalid amount paid"
+            });
+        }
+
+        if (isNaN(previousDuePayment) || previousDuePayment < 0) {
+            return res.status(400).json({
+                message: "Invalid previous due payment"
+            });
+        }
+
+  
+        // Customer Validation
+        let customer = null;
+        let previousCredit = 0;
+
         if (customer_id) {
             customer = await Customer.findById(customer_id);
 
@@ -30,14 +52,31 @@ const checkout = async (req, res) => {
                     message: "Customer not found"
                 });
             }
+
+            previousCredit = Number(customer.credit_balance || 0);
         }
 
+        // Cannot pay more previous due than exists
+        if (previousDuePayment > previousCredit) {
+            return res.status(400).json({
+                message: "Previous due payment exceeds credit balance"
+            });
+        }
+
+        // Cannot allocate more previous due than total paid
+        if (previousDuePayment > paidAmount) {
+            return res.status(400).json({
+                message: "Previous due payment cannot exceed total paid amount"
+            });
+        }
+
+       
+        // Process Items
         let subtotal = 0;
         let total_discount = 0;
         const saleItems = [];
 
         for (const item of items) {
-
             const product = await Inventory.findById(item.product_id);
 
             if (!product) {
@@ -52,7 +91,7 @@ const checkout = async (req, res) => {
                 });
             }
 
-            const discountPercent = item.discount_percent || 0;
+            const discountPercent = Number(item.discount_percent || 0);
 
             if (discountPercent < 0 || discountPercent > 100) {
                 return res.status(400).json({
@@ -96,25 +135,24 @@ const checkout = async (req, res) => {
             (subtotal - total_discount).toFixed(2)
         );
 
-        // Validate amount paid
-        if (amount_paid < 0) {
+        // Final Financial Calculations
+
+        // Prevent system overpayment
+        if (paidAmount > (grandTotal + previousCredit)) {
             return res.status(400).json({
-                message: "Invalid amount paid"
+                message: "Amount paid exceeds total payable"
             });
         }
 
-        if (amount_paid > grandTotal) {
-            return res.status(400).json({
-                message: "Amount paid cannot exceed total"
-            });
-        }
+        const remainingForBill = paidAmount - previousDuePayment;
 
         const dueAmount = Number(
-            (grandTotal - amount_paid).toFixed(2)
+            (grandTotal - remainingForBill).toFixed(2)
         );
 
         const invoiceNumber = `INV-${Date.now()}`;
 
+        // Create Sale
         const sale = await Sales.create({
             invoice_number: invoiceNumber,
             customer: customer ? customer._id : null,
@@ -124,24 +162,41 @@ const checkout = async (req, res) => {
             subtotal,
             total_discount,
             grand_total: grandTotal,
-            amount_paid,
+            amount_paid: paidAmount,
+            previous_due_payment: previousDuePayment,
             due_amount: dueAmount,
             payment_method
         });
 
-        // If due exists and customer selected → update credit
-        if (customer && dueAmount > 0) {
-            customer.credit_balance += dueAmount;
+        
+        // Update Customer Credit
+        if (customer) {
+            // Remove paid previous due
+            customer.credit_balance -= previousDuePayment;
+
+            // Add new due if exists
+            if (dueAmount > 0) {
+                customer.credit_balance += dueAmount;
+            }
+
+            // Prevent negative balance edge case
+            if (customer.credit_balance < 0) {
+                customer.credit_balance = 0;
+            }
+
             await customer.save();
         }
 
         return res.status(200).json({
-            message: dueAmount > 0 
-                ? "Billing successful. Due recorded."
-                : "Billing successful",
+            message:
+                dueAmount > 0
+                    ? "Billing successful. Due recorded."
+                    : "Billing successful",
             invoice: sale,
             due_amount: dueAmount,
-            customer_credit_balance: customer ? customer.credit_balance : null
+            customer_credit_balance: customer
+                ? customer.credit_balance
+                : null
         });
 
     } catch (error) {
