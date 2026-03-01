@@ -1,9 +1,9 @@
 import { Router } from "express";
-import { generateBulkBarcodes, getSingleBarcode } from "../controllers/labelController.js";
+import {  generateLabels, getSingleBarcode } from "../controllers/labelController.js";
 
 const labelRouter = Router();
 
 labelRouter.get('/single/:id', getSingleBarcode);
-labelRouter.post('/bulk', generateBulkBarcodes);
+labelRouter.post('/labels/generate', generateLabels);
 
 export default labelRouter;

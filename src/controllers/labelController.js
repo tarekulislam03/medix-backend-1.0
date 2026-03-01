@@ -68,74 +68,78 @@ export const getSingleBarcode = async (req, res) => {
 };
 
 // Bulk barcode label pdf gen
-export const generateBulkBarcodes = async (req, res) => {
+export const generateLabels = async (req, res) => {
     try {
-        const { productIds } = req.body;
+        const { items } = req.body;
 
-        if (!productIds || !Array.isArray(productIds)) {
+        if (!items || !Array.isArray(items) || items.length === 0) {
             return res.status(400).json({
-                message: "Product IDs required"
+                message: "Items required"
             });
         }
 
-        const products = await Inventory.find({
-            _id: { $in: productIds }
-        });
-
         // 58mm thermal width
         const doc = new PDFDocument({
-            size: [164, 1000],   // width fixed, height long
-            margin: 10
+            size: [164, 2000],
+            margin: 8
         });
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader(
             'Content-Disposition',
-            'inline; filename=thermal-barcodes.pdf'
+            'inline; filename=thermal-labels.pdf'
         );
 
         doc.pipe(res);
 
-        for (const product of products) {
+        for (const entry of items) {
 
-            // Product Name
-            doc.fontSize(10)
-               .text(product.medicine_name, {
-                   align: 'center'
-               });
+            const product = await Inventory.findById(entry.productId);
+            if (!product) continue;
 
-            doc.moveDown(0.3);
+            const copies = entry.copies || 1;
 
-            // Generate barcode
-            const barcodeBuffer = await bwipjs.toBuffer({
-                bcid: 'code128',
-                text: product.barcode,
-                scale: 2,
-                height: 15,
-                includetext: true,
-                textxalign: 'center',
-            });
+            for (let i = 0; i < copies; i++) {
 
-            doc.image(barcodeBuffer, {
-                fit: [140, 80],
-                align: 'center'
-            });
+                // Product Name
+                doc.fontSize(10)
+                   .text(product.medicine_name, {
+                       align: 'center'
+                   });
 
-            doc.moveDown(0.3);
+                doc.moveDown(0.3);
 
-            doc.fontSize(10)
-               .text(`MRP: ₹${product.mrp}`, {
-                   align: 'center'
-               });
+                // Barcode
+                const barcodeBuffer = await bwipjs.toBuffer({
+                    bcid: 'code128',
+                    text: product.barcode,
+                    scale: 2,
+                    height: 15,
+                    includetext: true,
+                    textxalign: 'center',
+                });
 
-            doc.moveDown(1);
+                doc.image(barcodeBuffer, {
+                    fit: [140, 80],
+                    align: 'center'
+                });
 
-            // Divider line between labels
-            doc.moveTo(10, doc.y)
-               .lineTo(154, doc.y)
-               .stroke();
+                doc.moveDown(0.3);
 
-            doc.moveDown(1);
+                doc.fontSize(10)
+                   .text(`MRP: ₹${product.mrp}`, {
+                       align: 'center'
+                   });
+
+                doc.moveDown(0.8);
+
+                // Separator
+                doc.moveTo(8, doc.y)
+                   .lineTo(156, doc.y)
+                   .stroke();
+
+                doc.moveDown(0.8);
+            }
         }
 
         doc.end();
