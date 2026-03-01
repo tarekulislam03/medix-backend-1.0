@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { generateBulkBarcodes, getSingleBarcode } from "../controllers/labelController";
+import { generateBulkBarcodes, getSingleBarcode } from "../controllers/labelController.js";
 
 const labelRouter = Router();
 
