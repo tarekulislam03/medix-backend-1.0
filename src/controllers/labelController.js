@@ -14,12 +14,53 @@ export const getSingleBarcode = async (req, res) => {
             return res.status(404).json({ message: "Product not found" });
         }
 
-        const barcodeValue = product.barcode;
+        // 58mm width ≈ 164 points
+        const doc = new PDFDocument({
+            size: [164, 250],  // width, height in points
+            margin: 10
+        });
 
-        const barcodeBuffer = await generateBarcodeBuffer(barcodeValue);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader(
+            'Content-Disposition',
+            `inline; filename=${product.barcode}.pdf`
+        );
 
-        res.setHeader('Content-Type', 'image/png');
-        res.send(barcodeBuffer);
+        doc.pipe(res);
+
+        // Generate barcode image
+        const barcodeBuffer = await bwipjs.toBuffer({
+            bcid: 'code128',
+            text: product.barcode,
+            scale: 2,
+            height: 15,
+            includetext: true,
+            textxalign: 'center',
+        });
+
+        // Product Name
+        doc.fontSize(10)
+           .text(product.medicine_name, {
+               align: 'center'
+           });
+
+        doc.moveDown(0.5);
+
+        // Barcode
+        doc.image(barcodeBuffer, {
+            fit: [140, 80],
+            align: 'center'
+        });
+
+        doc.moveDown(0.5);
+
+        // MRP
+        doc.fontSize(10)
+           .text(`MRP: ₹${product.mrp}`, {
+               align: 'center'
+           });
+
+        doc.end();
 
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -29,69 +70,79 @@ export const getSingleBarcode = async (req, res) => {
 // Bulk barcode label pdf gen
 export const generateBulkBarcodes = async (req, res) => {
     try {
-        const { productIds } = req.body;  
+        const { productIds } = req.body;
 
         if (!productIds || !Array.isArray(productIds)) {
-            return res.status(400).json({ message: "Product IDs required" });
+            return res.status(400).json({
+                message: "Product IDs required"
+            });
         }
 
         const products = await Inventory.find({
             _id: { $in: productIds }
         });
 
+        // 58mm thermal width
         const doc = new PDFDocument({
-            size: 'A4',
-            margin: 20
+            size: [164, 1000],   // width fixed, height long
+            margin: 10
         });
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader(
             'Content-Disposition',
-            'inline; filename=barcodes.pdf'
+            'inline; filename=thermal-barcodes.pdf'
         );
 
         doc.pipe(res);
 
-        let x = 40;
-        let y = 40;
-
-        const labelWidth = 180;
-        const labelHeight = 100;
-
         for (const product of products) {
 
+            // Product Name
+            doc.fontSize(10)
+               .text(product.medicine_name, {
+                   align: 'center'
+               });
+
+            doc.moveDown(0.3);
+
+            // Generate barcode
             const barcodeBuffer = await bwipjs.toBuffer({
                 bcid: 'code128',
                 text: product.barcode,
                 scale: 2,
-                height: 10,
+                height: 15,
                 includetext: true,
                 textxalign: 'center',
             });
 
-            doc.image(barcodeBuffer, x, y, { width: 150 });
-            doc.text(product.medicine_name, x, y + 60, {
-                width: 150,
+            doc.image(barcodeBuffer, {
+                fit: [140, 80],
                 align: 'center'
             });
 
-            x += labelWidth;
+            doc.moveDown(0.3);
 
-            if (x > 400) {
-                x = 40;
-                y += labelHeight;
-            }
+            doc.fontSize(10)
+               .text(`MRP: ₹${product.mrp}`, {
+                   align: 'center'
+               });
 
-            if (y > 750) {
-                doc.addPage();
-                x = 40;
-                y = 40;
-            }
+            doc.moveDown(1);
+
+            // Divider line between labels
+            doc.moveTo(10, doc.y)
+               .lineTo(154, doc.y)
+               .stroke();
+
+            doc.moveDown(1);
         }
 
         doc.end();
 
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        res.status(500).json({
+            message: error.message
+        });
     }
 };
