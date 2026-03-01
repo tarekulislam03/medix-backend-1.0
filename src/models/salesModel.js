@@ -14,15 +14,36 @@ const SalesSchema = new mongoose.Schema({
         {
             product_id: {
                 type: mongoose.Schema.Types.ObjectId,
-                ref: "Inventory"
+                ref: "Inventory",
+                required: true,
             },
-            product_name: String,
-            barcode: String,
-            mrp: Number,
-            quantity: Number,
-            discount_percent: Number,
-            discount_amount: Number,
-            total: Number
+            medicine_name: {
+                type: String,
+                required: true,
+            },
+            barcode: {
+                type: String,
+            },
+            mrp: {
+                type: Number,
+                required: true,
+            },
+            quantity: {
+                type: Number,
+                required: true,
+            },
+            discount_percent: {
+                type: Number,
+                default: 0,
+            },
+            discount_amount: {
+                type: Number,
+                default: 0,
+            },
+            total: {
+                type: Number,
+                required: true,
+            },
         }
     ],
 

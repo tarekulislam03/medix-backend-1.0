@@ -171,64 +171,61 @@ const searchCustomer = async (req, res) => {
 };
 
 const getCustomerLastPurchase = async (req, res) => {
-  try {
-    const { id } = req.params;
+    try {
+        const { id } = req.params;
 
-    console.log("Incoming customer id:", id);
+        if (!id) {
+            return res.status(400).json({ message: "Customer id required" });
+        }
 
-    const allSales = await Sales.find({ customer: id });
-    console.log("Matching sales count:", allSales.length);
+        const lastSale = await Sales.findOne({ customer: id })
+            .sort({ created_at: -1 })
+            .populate("items.product_id")
+            .lean();
 
-    const lastSale = await Sales.findOne({ customer: id })
-      .sort({ created_at: -1 });
+        if (!lastSale) {
+            return res.status(200).json({ data: null });
+        }
 
-    console.log("Last sale found:", lastSale);
+        return res.status(200).json({
+            data: lastSale,
+        });
 
-    if (!lastSale) {
-      return res.status(200).json({ data: null });
+    } catch (error) {
+        console.error("Last purchase error:", error);
+        return res.status(500).json({ message: error.message });
     }
-
-    return res.status(200).json({
-      data: lastSale
-    });
-
-  } catch (error) {
-    console.error("Error:", error);
-    return res.status(500).json({
-      message: error.message
-    });
-  }
 };
 
 
 const getCustomerCredit = async (req, res) => {
-  try {
-    const { id } = req.params;
+    try {
+        const { id } = req.params;
 
-    const customer = await Customer.findById(id).select("credit_balance name");
+        const customer = await Customer.findById(id).select("credit_balance name");
 
-    if (!customer) {
-      return res.status(404).json({
-        success: false,
-        message: "Customer not found",
-      });
+        if (!customer) {
+            return res.status(404).json({
+                success: false,
+                message: "Customer not found",
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            customer_id: customer._id,
+            customer_name: customer.name,
+            customer_credit_balance: customer.credit_balance || 0,
+        });
+
+    } catch (error) {
+        console.error("Error fetching customer credit:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Server error while fetching customer credit",
+        });
     }
-
-    return res.status(200).json({
-      success: true,
-      customer_id: customer._id,
-      customer_name: customer.name,
-      customer_credit_balance: customer.credit_balance || 0,
-    });
-
-  } catch (error) {
-    console.error("Error fetching customer credit:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Server error while fetching customer credit",
-    });
-  }
 };
 
 export { createCustomer, getAllCustomers, getCustomerById, updateCustomer, deleteCustomer, searchCustomer, getCustomerLastPurchase, getCustomerCredit }
