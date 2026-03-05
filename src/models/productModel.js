@@ -20,28 +20,32 @@ const inventorySchema = new Schema({
     alert_threshold: {
         type: Number,
         default: 10,
-        
+
     },
 
     expiry_date: {
-        type: Date,
-        required: true,
-        
-    }, 
+        type: Date
+
+    },
 
     supplier_name: {
-        type: String,
-        required: true,
+        type: String
     },
     barcode: {
         type: String,
         unique: true,
+        sparse: true
+    },
+
+    tablets_per_strip: {
+        type: Number,
+        default: null
     }
 },
 
-{
-    timestamps: true
-});
+    {
+        timestamps: true
+    });
 
 const Inventory = mongoose.model("Inventory", inventorySchema);
 

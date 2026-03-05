@@ -13,13 +13,18 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@openrouter/sdk": "^0.9.11",
+    "axios": "^1.13.6",
     "bwip-js": "^4.8.0",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "mongoose": "^9.2.1",
+    "multer": "^2.1.0",
     "nodemon": "^3.1.11",
     "pdfkit": "^0.17.2",
-    "uuid": "^13.0.0"
+    "sharp": "^0.34.5",
+    "uuid": "^13.0.0",
+    "zod": "^4.3.6"
   }
 }

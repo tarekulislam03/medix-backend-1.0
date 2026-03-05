@@ -1,85 +1,75 @@
 import bwipjs from "bwip-js";
 import Inventory from "../models/productModel.js";
+import sharp from "sharp";
+import { callVisionModel } from "../services/llmService.js";
+import { safeParseJSON } from "../services/jsonParser.js";
 
 // Create product
 const createProduct = async (req, res) => {
     try {
-
-        // If body is an array → bulk upload
-        if (Array.isArray(req.body)) {
-
-            const productsWithBarcode = req.body.map((item) => {
-                const barcodeString =
-                    `${item.product_name.replace(/\s/g, '').toUpperCase()}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-
-                return {
-                    ...item,
-                    barcode: barcodeString
-                };
-            });
-
-            const products = await Inventory.insertMany(productsWithBarcode);
-
-            return res.status(201).json({
-                message: "Products added successfully",
-                data: products,
-            });
-        }
-
-        const { medicine_name, mrp, quantity, alert_threshold, expiry_date, supplier_name } = req.body;
-
-        // Validation
-        if (!medicine_name || !mrp || !quantity || !expiry_date || !supplier_name) {
-            return res.status(400).json({
-                message: "All fields are required",
-            });
-        }
-
-        // Generate barcode string
-        const barcodeString =
-            `${medicine_name.replace(/\s/g, '').toUpperCase()}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-
-        // Optional: generate Code128 barcode (not stored, just validated)
-        await bwipjs.toBuffer({
-            bcid: 'code128',
-            text: barcodeString,
-            scale: 3,
-            height: 10,
-            includetext: true,
-            textxalign: 'center',
-        });
-
-        const product = await Inventory.create({
+        const {
             medicine_name,
             mrp,
             quantity,
-            expiry_date,
             supplier_name,
+            expiry_date,
             alert_threshold,
-            barcode: barcodeString
-        });
+            tablets_per_strip
+        } = req.body;
 
-        return res.status(200).json({
-            message: "Product Added Succesfully",
-            data: {
-                medicine_name: product.medicine_name,
-                mrp: product.mrp,
-                quantity: product.quantity,
-                expiry_date: product.expiry_date,
-                supplier_name: product.supplier_name,
-                alert_threshold: product.alert_threshold,
-                barcode: product.barcode
+        if (!medicine_name || !mrp || !quantity) {
+            return res.status(400).json({
+                message: "medicine_name, mrp and quantity are required"
+            });
+        }
+
+        const cleanNumber = (val) =>
+            Number(String(val || 0).replace(/[^\d.]/g, "")) || 0;
+
+        const normalizedName = medicine_name.trim().toUpperCase();
+
+        const barcodeString =
+            `${normalizedName.replace(/\s/g, '')}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+        const product = await Inventory.findOneAndUpdate(
+            {
+                medicine_name: {
+                    $regex: new RegExp(`^${normalizedName}$`, "i")
+                }
             },
+            {
+                $inc: { quantity: cleanNumber(quantity) },
+                $set: {
+                    mrp: cleanNumber(mrp),
+                    supplier_name: supplier_name || null,
+                    expiry_date: expiry_date || null,
+                    alert_threshold: alert_threshold || null,
+                    tablets_per_strip: tablets_per_strip ? cleanNumber(tablets_per_strip) : null
+                },
+                $setOnInsert: {
+                    medicine_name: normalizedName,
+                    barcode: barcodeString
+                }
+            },
+            {
+                new: true,
+                upsert: true
+            }
+        );
 
+        return res.status(201).json({
+            message: "Product saved successfully",
+            data: product
         });
 
     } catch (error) {
-        res.status(500).json({
+        console.error("Create Product Error:", error);
+
+        return res.status(500).json({
             message: error.message
         });
     }
 };
-
 // Get all Products
 const getProducts = async (req, res) => {
     try {
@@ -269,4 +259,177 @@ const soonToExpiry = async (req, res) => {
 }
 
 
-export { createProduct, getProducts, getProductById, updateProduct, deleteProduct, searchProduct, lowStock, soonToExpiry };
+// Get loose medicine price per tablet
+const getLooseMedicinePrice = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { quantity } = req.query; // optional: number of tablets requested
+
+        const product = await Inventory.findById(id);
+
+        if (!product) {
+            return res.status(404).json({
+                success: false,
+                message: "Product not found"
+            });
+        }
+
+        if (!product.tablets_per_strip || product.tablets_per_strip <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: "This product is not configured for loose sale. Please set tablets_per_strip."
+            });
+        }
+
+        const pricePerTablet = Number((product.mrp / product.tablets_per_strip).toFixed(2));
+
+        const requestedQty = quantity ? Number(quantity) : null;
+        const totalPrice = requestedQty
+            ? Number((pricePerTablet * requestedQty).toFixed(2))
+            : null;
+
+        return res.status(200).json({
+            success: true,
+            medicine_name: product.medicine_name,
+            mrp_per_strip: product.mrp,
+            tablets_per_strip: product.tablets_per_strip,
+            price_per_tablet: pricePerTablet,
+            ...(requestedQty && {
+                requested_tablets: requestedQty,
+                total_price: totalPrice
+            })
+        });
+
+    } catch (error) {
+        console.error("Loose Medicine Price Error:", error);
+        return res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+// auto product import from bill image using AI
+const autoImportProducts = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: "No image uploaded"
+            });
+        }
+
+        //Preprocess Image (rotate + resize)
+        const processedBuffer = await sharp(req.file.buffer)
+            .rotate()               // auto-fix orientation
+            .resize({ width: 1200 }) // optimize for OCR
+            .toBuffer();
+
+        //Convert to base64
+        const base64Image = processedBuffer.toString("base64");
+
+        //Call AI
+        const aiRaw = await callVisionModel(base64Image);
+
+        const parsed = safeParseJSON(aiRaw);
+
+        if (!parsed.items || !Array.isArray(parsed.items)) {
+            throw new Error("Invalid AI response format");
+        }
+
+        return res.json({
+            success: true,
+            imported_products: parsed.items.length,
+            items: parsed.items
+        });
+
+    } catch (error) {
+        console.error("FULL ERROR:", error);
+        console.error("ERROR RESPONSE:", error.response?.data);
+
+        return res.status(500).json({
+            success: false,
+            message: "Auto import failed",
+            error: error.response?.data || error.message
+        });
+    }
+}
+
+
+const autoImportConfirm = async (req, res) => {
+    try {
+        const { items } = req.body;
+
+        if (!items || !Array.isArray(items)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid items format"
+            });
+        }
+
+        let updatedCount = 0;
+        let createdCount = 0;
+
+        const cleanNumber = (val) =>
+            Number(String(val || 0).replace(/[^\d.]/g, "")) || 0;
+
+        console.log("Items received:", items);
+        for (const item of items) {
+
+            const medicineNameRaw = item.medicine_name || item.product_name;
+            if (!medicineNameRaw) continue;
+
+            const medicineName = medicineNameRaw.trim();
+
+            const barcodeString =
+                `${medicineName.replace(/\s/g, '').toUpperCase()}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+            const result = await Inventory.findOneAndUpdate(
+                {
+                    medicine_name: {
+                        $regex: new RegExp(`^${medicineName}$`, "i")
+                    }
+                },
+                {
+                    $inc: { quantity: cleanNumber(item.quantity) },
+                    $set: {
+                        mrp: cleanNumber(item.mrp),
+                        expiry_date: item.expiry_date || null
+                    },
+                    $setOnInsert: {
+                        barcode: barcodeString,
+                        supplier_name: item.supplier_name || null,
+                        alert_threshold: item.alert_threshold || null
+                    }
+                },
+                {
+                    new: true,
+                    upsert: true,
+                    rawResult: true
+                }
+            );
+
+            if (result.lastErrorObject.upserted) {
+                createdCount++;
+            } else {
+                updatedCount++;
+            }
+        }
+
+        return res.json({
+            success: true,
+            updated_products: updatedCount,
+            new_products: createdCount
+        });
+
+    } catch (error) {
+        console.error("Confirm Import Error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Confirm import failed",
+            error: error.message
+        });
+    }
+};
+export { createProduct, getProducts, getProductById, updateProduct, deleteProduct, searchProduct, lowStock, soonToExpiry, autoImportProducts, autoImportConfirm, getLooseMedicinePrice };
