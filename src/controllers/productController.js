@@ -4,6 +4,21 @@ import sharp from "sharp";
 import { callVisionModel } from "../services/llmService.js";
 import { safeParseJSON } from "../services/jsonParser.js";
 
+const escapeRegExp = (string) => {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
+
+const getNextShortBarcode = async () => {
+    const lastProduct = await Inventory.findOne({ short_barcode: { $exists: true } })
+        .sort({ short_barcode: -1 })
+        .collation({ locale: "en_US", numericOrdering: true });
+
+    if (lastProduct && lastProduct.short_barcode && !isNaN(lastProduct.short_barcode)) {
+        return (parseInt(lastProduct.short_barcode, 10) + 1).toString();
+    }
+    return "100001";
+};
+
 // Create product
 const createProduct = async (req, res) => {
     try {
@@ -14,7 +29,8 @@ const createProduct = async (req, res) => {
             supplier_name,
             expiry_date,
             alert_threshold,
-            tablets_per_strip
+            tablets_per_strip,
+            cost_price
         } = req.body;
 
         if (!medicine_name || !mrp || !quantity) {
@@ -31,10 +47,12 @@ const createProduct = async (req, res) => {
         const barcodeString =
             `${normalizedName.replace(/\s/g, '')}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
+        const shortBarcodeString = await getNextShortBarcode();
+
         const product = await Inventory.findOneAndUpdate(
             {
                 medicine_name: {
-                    $regex: new RegExp(`^${normalizedName}$`, "i")
+                    $regex: new RegExp(`^${escapeRegExp(normalizedName)}$`, "i")
                 }
             },
             {
@@ -44,11 +62,13 @@ const createProduct = async (req, res) => {
                     supplier_name: supplier_name || null,
                     expiry_date: expiry_date || null,
                     alert_threshold: alert_threshold || null,
-                    tablets_per_strip: tablets_per_strip ? cleanNumber(tablets_per_strip) : null
+                    tablets_per_strip: tablets_per_strip ? cleanNumber(tablets_per_strip) : null,
+                    cost_price: cost_price ? cleanNumber(cost_price) : null
                 },
                 $setOnInsert: {
                     medicine_name: normalizedName,
-                    barcode: barcodeString
+                    barcode: barcodeString,
+                    short_barcode: shortBarcodeString
                 }
             },
             {
@@ -188,7 +208,8 @@ const searchProduct = async (req, res) => {
         const product = await Inventory.find({
             $or: [
                 { medicine_name: { $regex: keyword, $options: "i" } },
-                { barcode: keyword }
+                { barcode: keyword },
+                { short_barcode: keyword }
             ]
         });
 
@@ -319,10 +340,11 @@ const autoImportProducts = async (req, res) => {
             });
         }
 
-        //Preprocess Image (rotate + resize)
+        //Preprocess Image (rotate + resize + force format)
         const processedBuffer = await sharp(req.file.buffer)
             .rotate()               // auto-fix orientation
             .resize({ width: 1200 }) // optimize for OCR
+            .png()                   // Force output to PNG format
             .toBuffer();
 
         //Convert to base64
@@ -333,8 +355,9 @@ const autoImportProducts = async (req, res) => {
 
         const parsed = safeParseJSON(aiRaw);
 
-        if (!parsed.items || !Array.isArray(parsed.items)) {
-            throw new Error("Invalid AI response format");
+        if (!parsed || !parsed.items || !Array.isArray(parsed.items)) {
+            console.error("AI Response Content:", aiRaw);
+            throw new Error("Invalid AI response format: missing items array");
         }
 
         return res.json({
@@ -373,6 +396,8 @@ const autoImportConfirm = async (req, res) => {
         const cleanNumber = (val) =>
             Number(String(val || 0).replace(/[^\d.]/g, "")) || 0;
 
+        let currentShortBarcode = parseInt(await getNextShortBarcode(), 10);
+
         console.log("Items received:", items);
         for (const item of items) {
 
@@ -384,32 +409,37 @@ const autoImportConfirm = async (req, res) => {
             const barcodeString =
                 `${medicineName.replace(/\s/g, '').toUpperCase()}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
+            const shortBarcodeString = currentShortBarcode.toString();
+            currentShortBarcode++;
+
             const result = await Inventory.findOneAndUpdate(
                 {
                     medicine_name: {
-                        $regex: new RegExp(`^${medicineName}$`, "i")
+                        $regex: new RegExp(`^${escapeRegExp(medicineName)}$`, "i")
                     }
                 },
                 {
                     $inc: { quantity: cleanNumber(item.quantity) },
                     $set: {
                         mrp: cleanNumber(item.mrp),
-                        expiry_date: item.expiry_date || null
+                        expiry_date: item.expiry_date || null,
+                        cost_price: item.cost_price ? cleanNumber(item.cost_price) : null,
+                        supplier_name: item.supplier_name || null
                     },
                     $setOnInsert: {
                         barcode: barcodeString,
-                        supplier_name: item.supplier_name || null,
+                        short_barcode: shortBarcodeString,
                         alert_threshold: item.alert_threshold || null
                     }
                 },
                 {
                     new: true,
                     upsert: true,
-                    rawResult: true
+                    includeResultMetadata: true
                 }
             );
 
-            if (result.lastErrorObject.upserted) {
+            if (result.lastErrorObject && result.lastErrorObject.upserted) {
                 createdCount++;
             } else {
                 updatedCount++;

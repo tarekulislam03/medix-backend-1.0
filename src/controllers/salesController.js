@@ -1,8 +1,8 @@
 import Sales from "../models/salesModel.js";
 
-const todaySales = async(req, res)=>{
+const todaySales = async (req, res) => {
     try {
-        
+
         const startOfDay = new Date();
         startOfDay.setHours(0, 0, 0, 0);
 
@@ -39,9 +39,9 @@ const todaySales = async(req, res)=>{
     }
 };
 
-const monthlySales = async(req, res)=>{
+const monthlySales = async (req, res) => {
     try {
-        
+
         const now = new Date();
 
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);

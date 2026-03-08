@@ -17,6 +17,11 @@ const inventorySchema = new Schema({
         required: true,
     },
 
+    cost_price: {
+        type: Number
+    },
+
+
     alert_threshold: {
         type: Number,
         default: 10,
@@ -32,6 +37,12 @@ const inventorySchema = new Schema({
         type: String
     },
     barcode: {
+        type: String,
+        unique: true,
+        sparse: true
+    },
+
+    short_barcode: {
         type: String,
         unique: true,
         sparse: true

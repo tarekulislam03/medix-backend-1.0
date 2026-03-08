@@ -2,9 +2,9 @@ import axios from "axios";
 
 export const callVisionModel = async (base64Image) => {
   const response = await axios.post(
-    "https://integrate.api.nvidia.com/v1/chat/completions",
+    "https://openrouter.ai/api/v1/chat/completions",
     {
-      model: "nvidia/nemotron-nano-12b-v2-vl",
+      model: "nvidia/nemotron-nano-12b-v2-vl:free",
       max_tokens: 4096,
       temperature: 0,
       messages: [
@@ -21,6 +21,8 @@ Fields required:
 - mrp
 - quantity
 - expiry_date
+- cost_price ("RATE" in bills)
+- supplier_name
 
 Rules:
 - Return ONLY valid JSON
@@ -39,7 +41,9 @@ Format:
       "medicine_name":"",
       "mrp":0,
       "quantity":0,
-      "expiry_date":""
+      "expiry_date":"",
+      "cost_price":0,
+      "supplier_name":""
     }
   ]
 }
@@ -57,12 +61,17 @@ Format:
     },
     {
       headers: {
-        Authorization: `Bearer ${process.env.LLM_API_KEY}`,
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
         Accept: "application/json"
       }
     }
   );
+
+  if (!response.data?.choices?.[0]?.message?.content) {
+    console.error("OpenRouter Error Response:", response.data);
+    throw new Error("AI service returned an empty response");
+  }
 
   return response.data.choices[0].message.content;
 };

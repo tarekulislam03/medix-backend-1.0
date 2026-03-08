@@ -31,7 +31,7 @@ export const getSingleBarcode = async (req, res) => {
         // Generate barcode image
         const barcodeBuffer = await bwipjs.toBuffer({
             bcid: 'code128',
-            text: product.barcode,
+            text: product.short_barcode || product.barcode,
             scale: 2,
             height: 15,
             includetext: true,
@@ -40,9 +40,9 @@ export const getSingleBarcode = async (req, res) => {
 
         // Product Name
         doc.fontSize(10)
-           .text(product.medicine_name, {
-               align: 'center'
-           });
+            .text(product.medicine_name, {
+                align: 'center'
+            });
 
         doc.moveDown(0.5);
 
@@ -56,9 +56,9 @@ export const getSingleBarcode = async (req, res) => {
 
         // MRP
         doc.fontSize(10)
-           .text(`MRP: ₹${product.mrp}`, {
-               align: 'center'
-           });
+            .text(`MRP: ₹${product.mrp}`, {
+                align: 'center'
+            });
 
         doc.end();
 
@@ -103,16 +103,16 @@ export const generateLabels = async (req, res) => {
 
                 // Product Name
                 doc.fontSize(10)
-                   .text(product.medicine_name, {
-                       align: 'center'
-                   });
+                    .text(product.medicine_name, {
+                        align: 'center'
+                    });
 
                 doc.moveDown(0.3);
 
                 // Barcode
                 const barcodeBuffer = await bwipjs.toBuffer({
                     bcid: 'code128',
-                    text: product.barcode,
+                    text: product.short_barcode || product.barcode,
                     scale: 2,
                     height: 15,
                     includetext: true,
@@ -127,16 +127,16 @@ export const generateLabels = async (req, res) => {
                 doc.moveDown(0.3);
 
                 doc.fontSize(10)
-                   .text(`MRP: ₹${product.mrp}`, {
-                       align: 'center'
-                   });
+                    .text(`MRP: ₹${product.mrp}`, {
+                        align: 'center'
+                    });
 
                 doc.moveDown(0.8);
 
                 // Separator
                 doc.moveTo(8, doc.y)
-                   .lineTo(156, doc.y)
-                   .stroke();
+                    .lineTo(156, doc.y)
+                    .stroke();
 
                 doc.moveDown(0.8);
             }
