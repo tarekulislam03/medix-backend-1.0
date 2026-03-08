@@ -81,4 +81,67 @@ const monthlySales = async (req, res) => {
     }
 }
 
-export { todaySales, monthlySales };
+const getSalesHistory = async (req, res) => {
+    try {
+        const { page = 1, limit = 20, startDate, endDate } = req.query;
+
+        const match = {};
+
+        if (startDate && endDate) {
+            const start = new Date(startDate);
+            start.setHours(0, 0, 0, 0);
+
+            const end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+
+            match.created_at = {
+                $gte: start,
+                $lte: end
+            };
+        }
+
+        const pageNumber = Number(page) || 1;
+        const limitNumber = Number(limit) || 20;
+
+        const sales = await Sales.find(match)
+            .populate("customer") // Optionally populate customer if available
+            .sort({ created_at: -1 })
+            .skip((pageNumber - 1) * limitNumber)
+            .limit(limitNumber);
+
+        const totalSales = await Sales.countDocuments(match);
+
+        res.status(200).json({
+            success: true,
+            total: totalSales,
+            page: pageNumber,
+            pages: Math.ceil(totalSales / limitNumber),
+            data: sales
+        });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch sales history"
+        });
+    }
+};
+
+const getSaleById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const sale = await Sales.findById(id).populate("customer");
+
+        if (!sale) {
+            return res.status(404).json({ success: false, message: "Sale not found" });
+        }
+
+        res.status(200).json({ success: true, data: sale });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: "Failed to fetch sale details" });
+    }
+};
+
+export { todaySales, monthlySales, getSalesHistory, getSaleById };
